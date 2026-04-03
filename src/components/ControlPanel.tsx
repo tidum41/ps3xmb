@@ -304,7 +304,7 @@ export default function ControlPanel({ params, onChange }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* Glass card */}
-        <div className="rounded-xl border border-white/[0.14] bg-black/88 shadow-2xl backdrop-blur-2xl overflow-hidden text-white" style={{ boxShadow: "0 0 0 0.5px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.7)" }}>
+        <div className="rounded-xl border border-white/[0.14] overflow-hidden text-white" style={{ background: "rgba(8,8,10,0.96)", backdropFilter: "blur(24px) saturate(120%)", boxShadow: "0 0 0 0.5px rgba(255,255,255,0.07), 0 12px 40px rgba(0,0,0,0.85)" }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
