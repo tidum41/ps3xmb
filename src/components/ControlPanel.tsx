@@ -53,11 +53,13 @@ function hexToRgb(hex: string): [number, number, number] {
 // Compute where to place the panel so it stays fully in-viewport.
 // The transform-origin is set to the corner nearest the pill so the spring
 // open animation grows from the right place.
-const PANEL_W = 240
-const PANEL_H = 490 // conservative estimate; will clip only if screen is tiny
-const PILL_W  = 72
-const PILL_H  = 32
-const GAP     = 8
+const PANEL_W  = 240
+// Use the tallest possible state (effects expanded) so we never clip
+const PANEL_H  = 610
+const PILL_W   = 72
+const PILL_H   = 32
+const GAP      = 8
+const EDGE_PAD = 10 // guaranteed clearance from every viewport edge
 
 function computePanelLayout(pill: { x: number; y: number }) {
   const vw = window.innerWidth
@@ -67,15 +69,16 @@ function computePanelLayout(pill: { x: number; y: number }) {
   const roomRight = vw - (pill.x + PILL_W + GAP)
   const roomLeft  = pill.x - GAP
   const onLeft    = roomLeft > roomRight && roomLeft >= PANEL_W
-  const panelLeft = onLeft
-    ? Math.max(8, pill.x - PANEL_W - GAP)
-    : Math.min(vw - PANEL_W - 8, pill.x + PILL_W + GAP)
+  const rawLeft   = onLeft
+    ? pill.x - PANEL_W - GAP
+    : pill.x + PILL_W + GAP
+  const panelLeft = Math.max(EDGE_PAD, Math.min(rawLeft, vw - PANEL_W - EDGE_PAD))
 
-  // Vertical: anchor top of panel to pill, but shift up if it would clip bottom
-  const rawTop    = pill.y
-  const panelTop  = Math.max(8, Math.min(rawTop, vh - PANEL_H - 8))
+  // Vertical: anchor top to pill, shift up if it would clip bottom
+  const rawTop   = pill.y
+  const panelTop = Math.max(EDGE_PAD, Math.min(rawTop, vh - PANEL_H - EDGE_PAD))
 
-  // transform-origin — the corner closest to the pill
+  // transform-origin — corner closest to the pill
   const ox = onLeft ? "right" : "left"
   const oy = pill.y > vh * 0.6 ? "bottom" : "top"
 
@@ -98,8 +101,8 @@ function ColorRow({
 }) {
   const hex = rgbToHex(value)
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] text-white/50 w-6 shrink-0">{label}</span>
+    <div className="flex items-center gap-2.5">
+      <span className="text-[11px] text-white/50 w-[72px] shrink-0">{label}</span>
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -206,7 +209,12 @@ export default function ControlPanel({ params, onChange }: Props) {
     if (!dragState.current) return
     const dx = e.clientX - dragState.current.startX
     const dy = e.clientY - dragState.current.startY
-    setPillPos({ x: dragState.current.origX + dx, y: dragState.current.origY + dy })
+    const rawX = dragState.current.origX + dx
+    const rawY = dragState.current.origY + dy
+    // Clamp so the pill always stays within EDGE_PAD of every viewport edge
+    const clampedX = Math.max(EDGE_PAD, Math.min(rawX, window.innerWidth  - PILL_W - EDGE_PAD))
+    const clampedY = Math.max(EDGE_PAD, Math.min(rawY, window.innerHeight - PILL_H - EDGE_PAD))
+    setPillPos({ x: clampedX, y: clampedY })
   }
   function onPillPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
     if (!dragState.current) return
@@ -296,7 +304,7 @@ export default function ControlPanel({ params, onChange }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* Glass card */}
-        <div className="rounded-xl border border-white/10 bg-black/70 shadow-2xl backdrop-blur-2xl overflow-hidden text-white">
+        <div className="rounded-xl border border-white/[0.14] bg-black/88 shadow-2xl backdrop-blur-2xl overflow-hidden text-white" style={{ boxShadow: "0 0 0 0.5px rgba(255,255,255,0.06), 0 8px 32px rgba(0,0,0,0.7)" }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
@@ -346,9 +354,9 @@ export default function ControlPanel({ params, onChange }: Props) {
           <Separator className="bg-white/8" />
 
           {/* Color rows */}
-          <div className="px-3 py-2.5 space-y-2">
-            <ColorRow label="Wave" value={params.waveColor} onChange={v => set("waveColor", v)} />
-            <ColorRow label="Bg"   value={params.bgColor}   onChange={v => set("bgColor", v)} />
+          <div className="px-3 py-3 space-y-2.5">
+            <ColorRow label="Wave"       value={params.waveColor} onChange={v => set("waveColor", v)} />
+            <ColorRow label="Background" value={params.bgColor}   onChange={v => set("bgColor", v)} />
           </div>
 
           <Separator className="bg-white/8" />
