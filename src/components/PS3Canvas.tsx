@@ -105,30 +105,32 @@ void main() {
   // Soft ambient light cast by the wave back onto the dark background
   finalColor += uBgColor * c * 0.12;
 
-  // Main wave: color filter applied additively over the dark background
-  finalColor += uWaveColor * c * uIntensity;
-
   // Fresnel-inspired silk edge brightening (PS3 Fresnel luminescence effect)
   // pow(1-c, n)*c peaks near wave edges (c≈0.35), falls off at center and background
   float fresnel = pow(1.0 - c, 2.5) * c * 5.0;
   fresnel = clamp(fresnel, 0.0, 1.0);
-  finalColor += uWaveColor * fresnel * uIntensity * 0.35;
+
+  // Isolated wave contribution so halftone can target it without affecting the bg
+  vec3 waveContrib = uWaveColor * c * uIntensity
+                   + uWaveColor * fresnel * uIntensity * 0.35;
+
+  // Halftone dot grid — wave ribbons only, background stays smooth
+  if (uHalftone > 0.0) {
+    vec2  cell   = floor(gl_FragCoord.xy / uHalftoneSize);
+    vec2  center = (cell + 0.5) * uHalftoneSize;
+    float d      = length(gl_FragCoord.xy - center);
+    float lum    = dot(waveContrib, vec3(0.299, 0.587, 0.114));
+    float radius = uHalftoneSize * 0.5 * lum;
+    float dotVal = smoothstep(radius + 0.8, radius - 0.8, d);
+    waveContrib  = mix(waveContrib, dotVal * uWaveColor * uIntensity, uHalftone);
+  }
+
+  finalColor += waveContrib;
 
   // Film grain
   if (uGrain > 0.0) {
     float g = (rand(uv + fract(uTime * 0.07)) * 2.0 - 1.0) * uGrain * 0.055;
     finalColor += vec3(g);
-  }
-
-  // Halftone dot grid
-  if (uHalftone > 0.0) {
-    vec2  cell   = floor(gl_FragCoord.xy / uHalftoneSize);
-    vec2  center = (cell + 0.5) * uHalftoneSize;
-    float d      = length(gl_FragCoord.xy - center);
-    float lum    = dot(finalColor, vec3(0.299, 0.587, 0.114));
-    float radius = uHalftoneSize * 0.5 * lum;
-    float dotVal = smoothstep(radius + 0.8, radius - 0.8, d);
-    finalColor   = mix(finalColor, dotVal * uWaveColor, uHalftone);
   }
 
   // Triangular-PDF dither — eliminates 8-bit color banding in dark gradients
