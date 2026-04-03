@@ -1,6 +1,5 @@
-import { useRef, useState } from "react"
-import Color from "color"
-import { ChevronDown, ChevronRight, RotateCcw, Minus } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { ChevronDown, ChevronRight, ChevronUp, RotateCcw } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
@@ -18,8 +17,8 @@ import { cn } from "@/lib/utils"
 import type { PS3Params } from "./PS3Canvas"
 import { DEFAULT_PARAMS } from "./PS3Canvas"
 
-// ─── PS3 month presets ────────────────────────────────────────────────────────
-const PS3_PRESETS = [
+// ─── Month presets ────────────────────────────────────────────────────────────
+const PRESETS = [
   { name: "Default",   swatch: "#CBCBCB", wave: [0.80, 0.80, 0.82] as [number,number,number], bg: [0.18, 0.18, 0.20] as [number,number,number] },
   { name: "January",   swatch: "#D8BF1A", wave: [0.85, 0.75, 0.10] as [number,number,number], bg: [0.13, 0.11, 0.02] as [number,number,number] },
   { name: "February",  swatch: "#6DB217", wave: [0.43, 0.70, 0.09] as [number,number,number], bg: [0.06, 0.13, 0.02] as [number,number,number] },
@@ -35,7 +34,7 @@ const PS3_PRESETS = [
   { name: "December",  swatch: "#111115", wave: [0.13, 0.13, 0.16] as [number,number,number], bg: [0.03, 0.03, 0.05] as [number,number,number] },
 ]
 
-// ─── Color helpers ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function rgbToHex(rgb: [number, number, number]): string {
   return "#" + rgb.map(v => {
     const h = Math.round(v * 255).toString(16)
@@ -51,7 +50,43 @@ function hexToRgb(hex: string): [number, number, number] {
   ]
 }
 
-// ─── ColorRow — swatch (→ popover picker) + hex text field ───────────────────
+// Compute where to place the panel so it stays fully in-viewport.
+// The transform-origin is set to the corner nearest the pill so the spring
+// open animation grows from the right place.
+const PANEL_W = 240
+const PANEL_H = 490 // conservative estimate; will clip only if screen is tiny
+const PILL_W  = 72
+const PILL_H  = 32
+const GAP     = 8
+
+function computePanelLayout(pill: { x: number; y: number }) {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  // Horizontal: place panel on whichever side has more room
+  const roomRight = vw - (pill.x + PILL_W + GAP)
+  const roomLeft  = pill.x - GAP
+  const onLeft    = roomLeft > roomRight && roomLeft >= PANEL_W
+  const panelLeft = onLeft
+    ? Math.max(8, pill.x - PANEL_W - GAP)
+    : Math.min(vw - PANEL_W - 8, pill.x + PILL_W + GAP)
+
+  // Vertical: anchor top of panel to pill, but shift up if it would clip bottom
+  const rawTop    = pill.y
+  const panelTop  = Math.max(8, Math.min(rawTop, vh - PANEL_H - 8))
+
+  // transform-origin — the corner closest to the pill
+  const ox = onLeft ? "right" : "left"
+  const oy = pill.y > vh * 0.6 ? "bottom" : "top"
+
+  return {
+    left: panelLeft,
+    top:  panelTop,
+    transformOrigin: `${ox} ${oy}`,
+  }
+}
+
+// ─── ColorRow ─────────────────────────────────────────────────────────────────
 function ColorRow({
   label,
   value,
@@ -62,12 +97,9 @@ function ColorRow({
   onChange: (v: [number, number, number]) => void
 }) {
   const hex = rgbToHex(value)
-
   return (
     <div className="flex items-center gap-2">
       <span className="text-[11px] text-white/50 w-6 shrink-0">{label}</span>
-
-      {/* Swatch → popover full HSL picker */}
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -89,8 +121,6 @@ function ColorRow({
           </ColorPicker>
         </PopoverContent>
       </Popover>
-
-      {/* Manual hex text entry */}
       <input
         type="text"
         value={hex.toUpperCase()}
@@ -129,32 +159,47 @@ function ControlRow({
   )
 }
 
-// ─── Main component ────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
+type PanelState = "open" | "closing" | "closed"
+
 interface Props {
   params: PS3Params
   onChange: (p: PS3Params) => void
 }
 
 export default function ControlPanel({ params, onChange }: Props) {
-  const [minimized, setMinimized] = useState(false)
+  const [panelState, setPanelState] = useState<PanelState>("open")
   const [effectsOpen, setEffectsOpen] = useState(false)
 
-  // Draggable pill position (bottom-right start)
+  // Pill position — starts bottom-right
   const [pillPos, setPillPos] = useState(() => ({
-    x: window.innerWidth - 90,
-    y: window.innerHeight - 40,
+    x: window.innerWidth  - PILL_W  - 20,
+    y: window.innerHeight - PILL_H - 20,
   }))
-  const dragState = useRef<{
-    startX: number; startY: number; origX: number; origY: number
-  } | null>(null)
 
+  // Snapshot of pill position at open time (so panel doesn't jump if pill is dragged while open)
+  const [openPos, setOpenPos] = useState(pillPos)
+
+  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+
+  // ── State machine helpers ──────────────────────────────────────────────
+  function openPanel() {
+    setOpenPos(pillPos)
+    setPanelState("open")
+  }
+
+  const closePanel = useCallback(() => {
+    setPanelState("closing")
+    // closing animation is 160ms (ease-in), then unmount
+    setTimeout(() => setPanelState("closed"), 160)
+  }, [])
+
+  // ── Draggable pill ─────────────────────────────────────────────────────
   function onPillPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.currentTarget.setPointerCapture(e.pointerId)
     dragState.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: pillPos.x,
-      origY: pillPos.y,
+      startX: e.clientX, startY: e.clientY,
+      origX: pillPos.x,  origY: pillPos.y,
     }
   }
   function onPillPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
@@ -167,183 +212,219 @@ export default function ControlPanel({ params, onChange }: Props) {
     if (!dragState.current) return
     const moved = Math.abs(e.clientX - dragState.current.startX) +
                   Math.abs(e.clientY - dragState.current.startY)
-    if (moved < 5) setMinimized(false) // treat as click
     dragState.current = null
+    if (moved < 5) openPanel()
   }
 
   function set<K extends keyof PS3Params>(key: K, val: PS3Params[K]) {
     onChange({ ...params, [key]: val })
   }
-
   function fmt(n: number, d = 2) { return n.toFixed(d) }
 
-  const activePreset = PS3_PRESETS.findIndex(p =>
+  const activePreset = PRESETS.findIndex(p =>
     p.wave.every((v, i) => Math.abs(v - params.waveColor[i]) < 0.01) &&
-    p.bg.every((v, i) => Math.abs(v - params.bgColor[i]) < 0.01)
+    p.bg.every((v, i)   => Math.abs(v - params.bgColor[i])   < 0.01)
   )
 
-  // ── Minimized pill (draggable) ────────────────────────────────────────────
-  if (minimized) {
+  const layout = computePanelLayout(openPos)
+
+  // ── Closed / pill view ────────────────────────────────────────────────
+  if (panelState === "closed") {
     return (
       <button
         onPointerDown={onPillPointerDown}
         onPointerMove={onPillPointerMove}
         onPointerUp={onPillPointerUp}
-        className="fixed z-50 flex items-center gap-1.5 px-3 h-8 rounded-full border border-white/10 bg-zinc-950/85 backdrop-blur-xl text-white/50 text-[11px] hover:text-white/80 hover:bg-zinc-900/90 transition-colors select-none cursor-grab active:cursor-grabbing"
+        className="fixed z-50 flex items-center gap-1.5 px-3 h-8 rounded-full border border-white/10 bg-black/55 backdrop-blur-xl text-white/50 text-[11px] hover:text-white/80 hover:bg-black/70 transition-colors select-none cursor-grab active:cursor-grabbing"
         style={{
           left: pillPos.x,
-          top: pillPos.y,
-          animation: "fadeIn 150ms ease both",
+          top:  pillPos.y,
           touchAction: "none",
+          animation: "pillIn 200ms cubic-bezier(0.34,1.56,0.64,1) both",
         }}
       >
-        <style>{`@keyframes fadeIn { from { opacity:0; transform:scale(0.92) } to { opacity:1; transform:scale(1) } }`}</style>
-        <span className="opacity-40 text-[10px]">〰</span>
+        <style>{`
+          @keyframes pillIn {
+            from { opacity: 0; transform: scale(0.8); }
+            to   { opacity: 1; transform: scale(1); }
+          }
+        `}</style>
+        <ChevronUp className="h-3 w-3 opacity-50" />
         Menu
       </button>
     )
   }
 
-  // ── Full panel ────────────────────────────────────────────────────────────
+  // ── Open / closing panel ─────────────────────────────────────────────
+  const isClosing = panelState === "closing"
+
   return (
-    <div
-      className="fixed bottom-5 right-5 w-60 z-50"
-      style={{ animation: "slideUp 180ms cubic-bezier(0.16,1,0.3,1) both" }}
-    >
+    <>
+      {/* Click-outside backdrop — sits above canvas, below panel */}
+      <div
+        className="fixed inset-0 z-40"
+        onClick={closePanel}
+        aria-hidden="true"
+      />
+
       <style>{`
-        @keyframes slideUp {
-          from { opacity:0; transform:translateY(6px) }
-          to   { opacity:1; transform:translateY(0) }
+        @keyframes panelOpen {
+          from { opacity: 0; transform: scale(0.88); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes panelClose {
+          from { opacity: 1; transform: scale(1); }
+          to   { opacity: 0; transform: scale(0.88); }
+        }
+        @keyframes pillIn {
+          from { opacity: 0; transform: scale(0.8); }
+          to   { opacity: 1; transform: scale(1); }
         }
       `}</style>
 
-      <div className="rounded-xl border border-white/10 bg-zinc-950/92 shadow-2xl backdrop-blur-xl overflow-hidden text-white">
+      <div
+        className="fixed z-50 w-60"
+        style={{
+          left:            layout.left,
+          top:             layout.top,
+          transformOrigin: layout.transformOrigin,
+          animation: isClosing
+            ? "panelClose 160ms cubic-bezier(0.4,0,1,1) both"
+            : "panelOpen  220ms cubic-bezier(0.34,1.56,0.64,1) both",
+        }}
+        // Prevent clicks inside panel from bubbling to the backdrop
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Glass card */}
+        <div className="rounded-xl border border-white/10 bg-black/70 shadow-2xl backdrop-blur-2xl overflow-hidden text-white">
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
-          <span className="text-[11px] font-medium text-white/60 tracking-wide">PS3 Silk</span>
-          <div className="flex items-center gap-0.5">
-            <Button
-              variant="ghost" size="icon"
-              className="h-6 w-6 text-white/25 hover:text-white/60 hover:bg-white/8"
-              onClick={() => onChange({ ...DEFAULT_PARAMS })}
-              title="Reset to defaults"
-            >
-              <RotateCcw className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost" size="icon"
-              className="h-6 w-6 text-white/25 hover:text-white/60 hover:bg-white/8"
-              onClick={() => setMinimized(true)}
-              title="Minimize"
-            >
-              <Minus className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Theme swatches */}
-        <div className="px-3 pb-2.5">
-          <p className="text-[10px] text-white/30 mb-1.5">Theme</p>
-          <div className="flex gap-1.5 flex-wrap">
-            {PS3_PRESETS.map((preset, i) => (
-              <button
-                key={preset.name}
-                title={preset.name}
-                onClick={() => onChange({ ...params, waveColor: preset.wave, bgColor: preset.bg })}
-                className={cn(
-                  "h-4.5 w-4.5 rounded-full transition-all cursor-pointer flex-shrink-0",
-                  activePreset === i
-                    ? "ring-2 ring-white/65 ring-offset-1 ring-offset-zinc-950 scale-115"
-                    : "opacity-55 hover:opacity-100 hover:scale-110"
-                )}
-                style={{ backgroundColor: preset.swatch, width: 18, height: 18 }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <Separator className="bg-white/8" />
-
-        {/* Color rows */}
-        <div className="px-3 py-2.5 space-y-2">
-          <ColorRow label="Wave" value={params.waveColor} onChange={v => set("waveColor", v)} />
-          <ColorRow label="Bg"   value={params.bgColor}   onChange={v => set("bgColor", v)} />
-        </div>
-
-        <Separator className="bg-white/8" />
-
-        {/* Wave controls */}
-        <div className="px-3 py-2.5 space-y-3">
-          <ControlRow label="Intensity" value={fmt(params.intensity)}>
-            <Slider min={0} max={1} step={0.01} value={[params.intensity]}
-              onValueChange={([v]) => set("intensity", v)} />
-          </ControlRow>
-          <ControlRow label="Speed" value={fmt(params.speed)}>
-            <Slider min={0.05} max={3} step={0.05} value={[params.speed]}
-              onValueChange={([v]) => set("speed", v)} />
-          </ControlRow>
-          <ControlRow label="Y offset" value={`${Math.round(params.yOffset)}px`}>
-            <Slider min={-200} max={200} step={1} value={[params.yOffset]}
-              onValueChange={([v]) => set("yOffset", v)} />
-          </ControlRow>
-        </div>
-
-        <Separator className="bg-white/8" />
-
-        {/* Cursor */}
-        <div className="px-3 py-2.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-white/50">Cursor</span>
-            <Switch checked={params.mouseEnabled} onCheckedChange={v => set("mouseEnabled", v)} />
-          </div>
-          <ControlRow
-            label="Reactivity"
-            value={fmt(params.mouseStrength, 3)}
-            className={cn(!params.mouseEnabled && "opacity-30 pointer-events-none")}
-          >
-            <Slider min={0} max={0.3} step={0.005} value={[params.mouseStrength]}
-              disabled={!params.mouseEnabled}
-              onValueChange={([v]) => set("mouseStrength", v)} />
-          </ControlRow>
-        </div>
-
-        <Separator className="bg-white/8" />
-
-        {/* Effects */}
-        <Collapsible open={effectsOpen} onOpenChange={setEffectsOpen}>
-          <CollapsibleTrigger asChild>
-            <button className="flex w-full items-center justify-between px-3 py-2.5 text-[11px] text-white/35 hover:text-white/65 transition-colors cursor-pointer">
-              <span>Effects</span>
-              {effectsOpen
-                ? <ChevronDown className="h-3 w-3" />
-                : <ChevronRight className="h-3 w-3" />}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="px-3 pb-3 space-y-3">
-              <ControlRow label="Halftone" value={fmt(params.halftone)}>
-                <Slider min={0} max={1} step={0.01} value={[params.halftone]}
-                  onValueChange={([v]) => set("halftone", v)} />
-              </ControlRow>
-              <ControlRow
-                label="Dot size"
-                value={`${fmt(params.halftoneSize, 1)}px`}
-                className={cn(params.halftone === 0 && "opacity-30")}
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 pt-2.5 pb-2">
+            <span className="text-[11px] font-medium text-white/55 tracking-wide">Menu</span>
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost" size="icon"
+                className="h-6 w-6 text-white/25 hover:text-white/60 hover:bg-white/8"
+                onClick={() => onChange({ ...DEFAULT_PARAMS })}
+                title="Reset to defaults"
               >
-                <Slider min={2} max={18} step={0.5} value={[params.halftoneSize]}
-                  onValueChange={([v]) => set("halftoneSize", v)} />
-              </ControlRow>
-              <Separator className="bg-white/8" />
-              <ControlRow label="Film grain" value={fmt(params.grain)}>
-                <Slider min={0} max={1} step={0.01} value={[params.grain]}
-                  onValueChange={([v]) => set("grain", v)} />
-              </ControlRow>
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+              {/* Arrow toggle — points down when open (click to close) */}
+              <Button
+                variant="ghost" size="icon"
+                className="h-6 w-6 text-white/25 hover:text-white/60 hover:bg-white/8"
+                onClick={closePanel}
+                title="Minimize"
+              >
+                <ChevronDown className="h-3 w-3" />
+              </Button>
             </div>
-          </CollapsibleContent>
-        </Collapsible>
+          </div>
 
+          {/* Theme swatches */}
+          <div className="px-3 pb-2.5">
+            <p className="text-[10px] text-white/30 mb-1.5">Theme</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {PRESETS.map((preset, i) => (
+                <button
+                  key={preset.name}
+                  title={preset.name}
+                  onClick={() => onChange({ ...params, waveColor: preset.wave, bgColor: preset.bg })}
+                  className={cn(
+                    "rounded-full transition-all cursor-pointer flex-shrink-0",
+                    activePreset === i
+                      ? "ring-2 ring-white/65 ring-offset-1 ring-offset-black/70 scale-110"
+                      : "opacity-55 hover:opacity-100 hover:scale-110"
+                  )}
+                  style={{ backgroundColor: preset.swatch, width: 18, height: 18 }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <Separator className="bg-white/8" />
+
+          {/* Color rows */}
+          <div className="px-3 py-2.5 space-y-2">
+            <ColorRow label="Wave" value={params.waveColor} onChange={v => set("waveColor", v)} />
+            <ColorRow label="Bg"   value={params.bgColor}   onChange={v => set("bgColor", v)} />
+          </div>
+
+          <Separator className="bg-white/8" />
+
+          {/* Wave controls */}
+          <div className="px-3 py-2.5 space-y-3">
+            <ControlRow label="Intensity" value={fmt(params.intensity)}>
+              <Slider min={0} max={1} step={0.01} value={[params.intensity]}
+                onValueChange={([v]) => set("intensity", v)} />
+            </ControlRow>
+            <ControlRow label="Speed" value={fmt(params.speed)}>
+              <Slider min={0.05} max={3} step={0.05} value={[params.speed]}
+                onValueChange={([v]) => set("speed", v)} />
+            </ControlRow>
+            <ControlRow label="Y offset" value={`${Math.round(params.yOffset)}px`}>
+              <Slider min={-200} max={200} step={1} value={[params.yOffset]}
+                onValueChange={([v]) => set("yOffset", v)} />
+            </ControlRow>
+          </div>
+
+          <Separator className="bg-white/8" />
+
+          {/* Cursor */}
+          <div className="px-3 py-2.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-white/50">Cursor</span>
+              <Switch checked={params.mouseEnabled} onCheckedChange={v => set("mouseEnabled", v)} />
+            </div>
+            <ControlRow
+              label="Reactivity"
+              value={fmt(params.mouseStrength, 3)}
+              className={cn(!params.mouseEnabled && "opacity-30 pointer-events-none")}
+            >
+              <Slider min={0} max={0.3} step={0.005} value={[params.mouseStrength]}
+                disabled={!params.mouseEnabled}
+                onValueChange={([v]) => set("mouseStrength", v)} />
+            </ControlRow>
+          </div>
+
+          <Separator className="bg-white/8" />
+
+          {/* Effects */}
+          <Collapsible open={effectsOpen} onOpenChange={setEffectsOpen}>
+            <CollapsibleTrigger asChild>
+              <button className="flex w-full items-center justify-between px-3 py-2.5 text-[11px] text-white/35 hover:text-white/65 transition-colors cursor-pointer">
+                <span>Effects</span>
+                {effectsOpen
+                  ? <ChevronDown className="h-3 w-3" />
+                  : <ChevronRight className="h-3 w-3" />}
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="px-3 pb-3 space-y-3">
+                <ControlRow label="Halftone" value={fmt(params.halftone)}>
+                  <Slider min={0} max={1} step={0.01} value={[params.halftone]}
+                    onValueChange={([v]) => set("halftone", v)} />
+                </ControlRow>
+                <ControlRow
+                  label="Dot size"
+                  value={`${fmt(params.halftoneSize, 1)}px`}
+                  className={cn(params.halftone === 0 && "opacity-30")}
+                >
+                  <Slider min={2} max={18} step={0.5} value={[params.halftoneSize]}
+                    onValueChange={([v]) => set("halftoneSize", v)} />
+                </ControlRow>
+                <Separator className="bg-white/8" />
+                <ControlRow label="Film grain" value={fmt(params.grain)}>
+                  <Slider min={0} max={1} step={0.01} value={[params.grain]}
+                    onValueChange={([v]) => set("grain", v)} />
+                </ControlRow>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+        </div>
       </div>
-    </div>
+    </>
   )
 }
