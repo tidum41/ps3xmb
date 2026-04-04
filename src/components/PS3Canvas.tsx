@@ -1,37 +1,11 @@
 import { useEffect, useRef } from "react"
 
-// ── PS3-style startup chime (Web Audio API) ───────────────────────────────────
+// ── PS3 startup audio ─────────────────────────────────────────────────────────
 function playStartupChime() {
   try {
-    const ctx  = new AudioContext()
-    const t    = ctx.currentTime
-    const dest = ctx.destination
-
-    // Warm arpeggiated chord: C3 → E3 → G3 → C4, staggered
-    const notes = [130.81, 164.81, 196.00, 261.63]
-    notes.forEach((hz, i) => {
-      const osc  = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = "sine"
-      osc.frequency.value = hz
-      const on = t + i * 0.09
-      gain.gain.setValueAtTime(0, on)
-      gain.gain.linearRampToValueAtTime(0.16, on + 0.07)
-      gain.gain.exponentialRampToValueAtTime(0.0001, on + 3.2)
-      osc.connect(gain); gain.connect(dest)
-      osc.start(on); osc.stop(on + 3.5)
-    })
-
-    // Sub-bass hit for weight
-    const sub  = ctx.createOscillator()
-    const subG = ctx.createGain()
-    sub.type = "sine"
-    sub.frequency.value = 65.41   // C2
-    subG.gain.setValueAtTime(0, t)
-    subG.gain.linearRampToValueAtTime(0.28, t + 0.05)
-    subG.gain.exponentialRampToValueAtTime(0.0001, t + 1.4)
-    sub.connect(subG); subG.connect(dest)
-    sub.start(t); sub.stop(t + 2)
+    const audio = new Audio("/Original Old PlayStation 3 PS3 Startup & Game Startup.mp3")
+    audio.volume = 1.0
+    audio.play().catch(e => console.warn("Audio playback failed:", e))
   } catch (e) {
     console.warn("Audio playback failed:", e)
   }
