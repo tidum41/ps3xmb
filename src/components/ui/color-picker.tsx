@@ -37,7 +37,7 @@ export function useColorPickerCtx() {
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-export type ColorPickerProps = HTMLAttributes<HTMLDivElement> & {
+export type ColorPickerProps = Omit<HTMLAttributes<HTMLDivElement>, "onChange"> & {
   /** Hex string e.g. "#CCCCD1" */
   value?: string
   /** Called with [r, g, b] each 0–1 whenever user changes the color */
