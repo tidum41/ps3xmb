@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react"
 // ── PS3 startup audio ─────────────────────────────────────────────────────────
 function playStartupChime() {
   try {
-    const audio = new Audio("/Original Old PlayStation 3 PS3 Startup & Game Startup.mp3")
+    const audio = new Audio("/ps3-startup.mp3")
     audio.volume = 1.0
     audio.play().catch(e => console.warn("Audio playback failed:", e))
   } catch (e) {
