@@ -159,8 +159,8 @@ function ControlRow({ label, value, children, className }: {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function ControlPanel({ params, onChange }: {
-  params: PS3Params; onChange: (p: PS3Params) => void
+export default function ControlPanel({ params, onChange, onStartup }: {
+  params: PS3Params; onChange: (p: PS3Params) => void; onStartup?: () => void
 }) {
   const [isOpen,      setIsOpen]      = useState(true)
   const [effectsOpen, setEffectsOpen] = useState(false)
@@ -443,6 +443,16 @@ export default function ControlPanel({ params, onChange }: {
 
           {effectsOpen && (
             <div className="px-3 pb-3 space-y-3">
+              {/* Startup sequence */}
+              <button
+                onClick={onStartup}
+                className="w-full h-7 rounded-md bg-white/6 border border-white/10 text-[11px] text-white/50 hover:text-white/80 hover:bg-white/10 hover:border-white/20 active:scale-[0.98] transition-all"
+              >
+                Startup sequence
+              </button>
+
+              <Separator className="bg-white/8" />
+
               <ControlRow label="Halftone" value={fmt(params.halftone)}>
                 <Slider min={0} max={1} step={0.01} value={[params.halftone]}
                   onValueChange={([v]) => set("halftone", v)} />

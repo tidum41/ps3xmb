@@ -3,7 +3,8 @@ import PS3Canvas, { DEFAULT_PARAMS, type PS3Params } from "./components/PS3Canva
 import ControlPanel from "./components/ControlPanel"
 
 export default function App() {
-  const [params, setParams] = useState<PS3Params>(DEFAULT_PARAMS)
+  const [params,     setParams]     = useState<PS3Params>(DEFAULT_PARAMS)
+  const [startupKey, setStartupKey] = useState(0)
 
   return (
     <div
@@ -15,8 +16,12 @@ export default function App() {
         background: "#000",
       }}
     >
-      <PS3Canvas {...params} />
-      <ControlPanel params={params} onChange={setParams} />
+      <PS3Canvas {...params} startupKey={startupKey} />
+      <ControlPanel
+        params={params}
+        onChange={setParams}
+        onStartup={() => setStartupKey(k => k + 1)}
+      />
     </div>
   )
 }

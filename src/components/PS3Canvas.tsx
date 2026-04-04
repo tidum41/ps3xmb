@@ -1,5 +1,42 @@
 import { useEffect, useRef } from "react"
 
+// ── PS3-style startup chime (Web Audio API) ───────────────────────────────────
+function playStartupChime() {
+  try {
+    const ctx  = new AudioContext()
+    const t    = ctx.currentTime
+    const dest = ctx.destination
+
+    // Warm arpeggiated chord: C3 → E3 → G3 → C4, staggered
+    const notes = [130.81, 164.81, 196.00, 261.63]
+    notes.forEach((hz, i) => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = "sine"
+      osc.frequency.value = hz
+      const on = t + i * 0.09
+      gain.gain.setValueAtTime(0, on)
+      gain.gain.linearRampToValueAtTime(0.16, on + 0.07)
+      gain.gain.exponentialRampToValueAtTime(0.0001, on + 3.2)
+      osc.connect(gain); gain.connect(dest)
+      osc.start(on); osc.stop(on + 3.5)
+    })
+
+    // Sub-bass hit for weight
+    const sub  = ctx.createOscillator()
+    const subG = ctx.createGain()
+    sub.type = "sine"
+    sub.frequency.value = 65.41   // C2
+    subG.gain.setValueAtTime(0, t)
+    subG.gain.linearRampToValueAtTime(0.28, t + 0.05)
+    subG.gain.exponentialRampToValueAtTime(0.0001, t + 1.4)
+    sub.connect(subG); subG.connect(dest)
+    sub.start(t); sub.stop(t + 2)
+  } catch (e) {
+    console.warn("Audio playback failed:", e)
+  }
+}
+
 export interface PS3Params {
   intensity: number
   speed: number
@@ -14,7 +51,7 @@ export interface PS3Params {
 }
 
 export const DEFAULT_PARAMS: PS3Params = {
-  intensity: 0.80,
+  intensity: 2.00,
   speed: 1.0,
   mouseStrength: 0.11,
   mouseEnabled: true,
@@ -51,6 +88,7 @@ uniform vec3  uWaveColor;
 uniform float uGrain;
 uniform float uHalftone;
 uniform float uHalftoneSize;
+uniform float uFade;
 
 float rand(vec2 co) {
   return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
@@ -147,6 +185,9 @@ void main() {
     finalColor += vec3(g);
   }
 
+  // Startup fade-in (multiplies entire output to/from black)
+  finalColor *= uFade;
+
   // Triangular-PDF dither — eliminates 8-bit banding in dark gradients
   float r1 = rand(gl_FragCoord.xy + vec2(uTime * 0.013, 0.0));
   float r2 = rand(gl_FragCoord.xy + vec2(0.0, uTime * 0.017));
@@ -164,11 +205,21 @@ function compileShader(gl: WebGLRenderingContext, src: string, type: number) {
   return s
 }
 
-export default function PS3Canvas(props: PS3Params) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const liveRef = useRef(props)
+export default function PS3Canvas(props: PS3Params & { startupKey?: number }) {
+  const canvasRef  = useRef<HTMLCanvasElement>(null)
+  const liveRef    = useRef(props)
+  // startupMs > 0 means a startup animation is in progress; value = rAF timestamp at trigger
+  const startupMs  = useRef<number>(0)
 
   useEffect(() => { liveRef.current = props })
+
+  // Re-arm startup animation whenever startupKey increments
+  useEffect(() => {
+    if (!props.startupKey) return
+    startupMs.current = -1   // sentinel: "arm on next frame"
+    const t = setTimeout(playStartupChime, 1000)
+    return () => clearTimeout(t)
+  }, [props.startupKey])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -214,6 +265,7 @@ export default function PS3Canvas(props: PS3Params) {
     const uGrainLoc     = gl.getUniformLocation(prog, "uGrain")
     const uHalftoneLoc  = gl.getUniformLocation(prog, "uHalftone")
     const uHtSizeLoc    = gl.getUniformLocation(prog, "uHalftoneSize")
+    const uFadeLoc      = gl.getUniformLocation(prog, "uFade")
 
     const buf = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, buf)
@@ -225,6 +277,23 @@ export default function PS3Canvas(props: PS3Params) {
     function frame(ms: number) {
       if (!canvas || !gl) return
       const p = liveRef.current
+
+      // ── Startup fade ──────────────────────────────────────────────────────
+      // sentinel -1 means "latch start time on this frame"
+      if (startupMs.current === -1) startupMs.current = ms
+      let fade = 1.0
+      if (startupMs.current > 0) {
+        const elapsed = ms - startupMs.current
+        if (elapsed < 2000) {
+          fade = 0.0
+        } else if (elapsed < 5000) {
+          const t = (elapsed - 2000) / 3000   // 0→1 over 3 seconds
+          fade = t * t * (3.0 - 2.0 * t)      // smoothstep easing
+        } else {
+          fade = 1.0
+          startupMs.current = 0               // animation complete
+        }
+      }
 
       mouse.x += (mouse.tx - mouse.x) * 0.042
       mouse.y += (mouse.ty - mouse.y) * 0.042
@@ -242,6 +311,7 @@ export default function PS3Canvas(props: PS3Params) {
       gl.uniform1f(uGrainLoc, p.grain)
       gl.uniform1f(uHalftoneLoc, p.halftone)
       gl.uniform1f(uHtSizeLoc, p.halftoneSize)
+      gl.uniform1f(uFadeLoc, fade)
 
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
