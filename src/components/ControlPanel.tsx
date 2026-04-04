@@ -312,8 +312,11 @@ export default function ControlPanel({ params, onChange }: {
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
         >
-          {/* Centered: arrow + label */}
-          <div className="flex items-center gap-1.5 pointer-events-none select-none">
+          {/* Centered: arrow + label — offset left by half the button area to stay optically centred when open */}
+          <div
+            className="flex items-center gap-1 pointer-events-none select-none"
+            style={{ transform: isOpen ? "translateX(-26px)" : "none", transition: isDragging ? "none" : "transform 200ms ease" }}
+          >
             <ChevronDown
               className="h-3 w-3 text-white/50 flex-shrink-0"
               style={{
@@ -321,7 +324,7 @@ export default function ControlPanel({ params, onChange }: {
                 transition: isDragging ? "none" : "transform 220ms ease-in-out",
               }}
             />
-            <span className="text-[11px] font-medium tracking-wide text-white/60">Menu</span>
+            <span className="text-[11px] font-medium tracking-wide text-white/60">menu</span>
           </div>
 
           {/* Reset + Minimize — fade out when closed */}
@@ -391,7 +394,7 @@ export default function ControlPanel({ params, onChange }: {
           {/* Wave controls */}
           <div className="px-3 py-2.5 space-y-3">
             <ControlRow label="Intensity" value={fmt(params.intensity)}>
-              <Slider min={0} max={1} step={0.01} value={[params.intensity]}
+              <Slider min={0} max={2} step={0.01} value={[params.intensity]}
                 onValueChange={([v]) => set("intensity", v)} />
             </ControlRow>
             <ControlRow label="Speed" value={fmt(params.speed)}>

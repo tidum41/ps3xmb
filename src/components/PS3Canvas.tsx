@@ -14,7 +14,7 @@ export interface PS3Params {
 }
 
 export const DEFAULT_PARAMS: PS3Params = {
-  intensity: 0.55,
+  intensity: 0.80,
   speed: 1.0,
   mouseStrength: 0.11,
   mouseEnabled: true,
@@ -105,17 +105,14 @@ void main() {
   // sigma replaces old width+sharp: 7–18 px gives visible ribbons with soft edges.
   // Per-wave peak: 0.085–0.110.  Strands crossing and stacking builds the glow.
   float c = 0.0;
-  c += 0.100 * wave(uv, uvx, 0.18, 0.22, 0.32, 0.00, 0.53, 10.0*px, false);
-  c += 0.095 * wave(uv, uvx, 0.38, 0.42, 0.24, 0.00, 0.51, 10.0*px, false);
-  c += 0.110 * wave(uv, uvx, 0.28, 0.62, 0.20, 0.00, 0.50,  8.0*px, false);
-  c += 0.090 * wave(uv, uvx, 0.12, 0.18, 0.14, 0.00, 0.49,  9.0*px, false);
-  c += 0.095 * wave(uv, uvx, 0.14, 0.28, 0.14, 0.00, 0.51, 11.0*px, true);
-  c += 0.090 * wave(uv, uvx, 0.33, 0.39, 0.11, 0.00, 0.50, 10.0*px, true);
-  c += 0.100 * wave(uv, uvx, 0.48, 0.50, 0.09, 0.00, 0.49,  7.0*px, true);
-  c += 0.085 * wave(uv, uvx, 0.22, 0.57, 0.08, 0.00, 0.48, 18.0*px, true);
-
-  // Horizontal taper: fade in left 18%, full at 20–80%, fade out right 20%
-  c *= smoothstep(0.0, 0.18, uv.x) * smoothstep(1.0, 0.80, uv.x);
+  c += 0.100 * wave(uv, uvx, 0.24, 0.30, 0.22, 0.00, 0.53, 10.0*px, false);
+  c += 0.095 * wave(uv, uvx, 0.30, 0.40, 0.20, 0.00, 0.51, 10.0*px, false);
+  c += 0.105 * wave(uv, uvx, 0.26, 0.50, 0.18, 0.00, 0.50,  8.0*px, false);
+  c += 0.090 * wave(uv, uvx, 0.22, 0.35, 0.16, 0.00, 0.49,  9.0*px, false);
+  c += 0.095 * wave(uv, uvx, 0.28, 0.45, 0.17, 0.00, 0.51, 11.0*px, true);
+  c += 0.090 * wave(uv, uvx, 0.32, 0.38, 0.15, 0.00, 0.50, 10.0*px, true);
+  c += 0.100 * wave(uv, uvx, 0.36, 0.48, 0.14, 0.00, 0.49,  7.0*px, true);
+  c += 0.090 * wave(uv, uvx, 0.25, 0.55, 0.13, 0.00, 0.48, 12.0*px, true);
 
   // ── Background ────────────────────────────────────────────────────────────
   // PS3 DDS textures: lighter bloom toward bottom-left (gl_FragCoord y=0 = bottom)
