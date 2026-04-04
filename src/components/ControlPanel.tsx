@@ -358,6 +358,7 @@ export default function ControlPanel({ params, onChange, onStartup }: {
 
         {/* ── Panel body — clipped by overflow:hidden when pill-sized ── */}
         <div
+          className="lowercase"
           style={{ pointerEvents: isOpen ? "auto" : "none" }}
           onClick={e => e.stopPropagation()}
         >
