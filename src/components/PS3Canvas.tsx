@@ -14,7 +14,7 @@ export interface PS3Params {
 }
 
 export const DEFAULT_PARAMS: PS3Params = {
-  intensity: 0.7,
+  intensity: 0.55,
   speed: 1.0,
   mouseStrength: 0.11,
   mouseEnabled: true,
@@ -56,25 +56,40 @@ float rand(vec2 co) {
   return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
+// ── Merged ribbon wave ────────────────────────────────────────────────────────
+// Preserves the original PS3-style wave PATH (speed/freq/amp/phase/cy) so the
+// crossing, arcing ribbon bundle structure remains intact.
+//
+// Shaping is changed from the old smoothstep+pow (too sharp) to an asymmetric
+// gaussian that gives airbrush-soft edges while retaining the silk ribbon
+// silhouette the flip parameter created.
+//
+// A turbulence term is layered on top of the base sine for organic variation.
 float wave(
-  vec2 uv, float uvx, float speed, float freq, float amp,
-  float phase, float cy, float width, float sharp, bool flip
+  vec2 uv, float uvx,
+  float speed, float freq, float amp, float phase, float cy,
+  float sigma, bool flip
 ) {
   float md     = length(uv - uMouse);
   float mnudge = smoothstep(0.45, 0.0, md) * uMouseStrength;
-  float angle  = uTime * uSpeed * speed * freq * -1.0 + (phase + uvx + mnudge) * 2.0;
-  float wy     = sin(angle) * amp + cy;
-  float dy     = wy - uv.y;
-  float dist   = abs(dy);
 
-  if (flip) {
-    if (dy > 0.0) dist *= 4.0;
-  } else {
-    if (dy < 0.0) dist *= 4.0;
-  }
+  // Original PS3-style sine path
+  float angle = uTime * uSpeed * speed * freq * -1.0 + (phase + uvx + mnudge) * 2.0;
+  float wy    = sin(angle) * amp + cy;
 
-  float s = smoothstep(width * 1.5, 0.0, dist);
-  return pow(s, sharp);
+  // Turbulence: 2.7x time speed, higher spatial freq → breaks mechanical perfection
+  // Amplitude 12% of main wave so shape remains clear but feels organic/silky
+  wy += amp * 0.12 * sin(uTime * uSpeed * speed * 2.7 + uvx * 6.1 + phase * 3.1);
+
+  float dy = uv.y - wy;
+
+  // Asymmetric gaussian: one side falls off 2.2x steeper (silk ribbon silhouette)
+  // The old flip used 4.0x — that was the hard-edge culprit; 2.2x is gentler
+  float d = abs(dy);
+  if (flip  && dy > 0.0) d *= 2.2;
+  if (!flip && dy < 0.0) d *= 2.2;
+
+  return exp(-(d * d) / (2.0 * sigma * sigma));
 }
 
 void main() {
@@ -82,47 +97,49 @@ void main() {
   uv.y += uYOffsetPx / uResolution.y;
 
   float aspectScale = uAspect / 2.414;
-  float uvx = uv.x * aspectScale;
+  float uvx         = uv.x * aspectScale;
+  float px          = 1.0 / uResolution.y;  // 1 pixel in UV space
 
-  // Accumulate white ribbon mask (0–1)
+  // ── 8 waves — original paths, gaussian shaping ────────────────────────────
+  // speed / freq / amp / phase / cy all identical to the original implementation.
+  // sigma replaces old width+sharp: 7–18 px gives visible ribbons with soft edges.
+  // Per-wave peak: 0.085–0.110.  Strands crossing and stacking builds the glow.
   float c = 0.0;
-  c += wave(uv, uvx, 0.18, 0.22, 0.32, 0.00, 0.53, 0.090, 14.0, false);
-  c += wave(uv, uvx, 0.38, 0.42, 0.24, 0.00, 0.51, 0.085, 16.0, false);
-  c += wave(uv, uvx, 0.28, 0.62, 0.20, 0.00, 0.50, 0.042, 22.0, false);
-  c += wave(uv, uvx, 0.12, 0.18, 0.14, 0.00, 0.49, 0.065, 18.0, false);
-  c += wave(uv, uvx, 0.14, 0.28, 0.14, 0.00, 0.51, 0.095, 15.0, true);
-  c += wave(uv, uvx, 0.33, 0.39, 0.11, 0.00, 0.50, 0.088, 17.0, true);
-  c += wave(uv, uvx, 0.48, 0.50, 0.09, 0.00, 0.49, 0.040, 24.0, true);
-  c += wave(uv, uvx, 0.22, 0.57, 0.08, 0.00, 0.48, 0.160, 14.0, true);
-  c = clamp(c, 0.0, 1.0);
+  c += 0.100 * wave(uv, uvx, 0.18, 0.22, 0.32, 0.00, 0.53, 10.0*px, false);
+  c += 0.095 * wave(uv, uvx, 0.38, 0.42, 0.24, 0.00, 0.51, 10.0*px, false);
+  c += 0.110 * wave(uv, uvx, 0.28, 0.62, 0.20, 0.00, 0.50,  8.0*px, false);
+  c += 0.090 * wave(uv, uvx, 0.12, 0.18, 0.14, 0.00, 0.49,  9.0*px, false);
+  c += 0.095 * wave(uv, uvx, 0.14, 0.28, 0.14, 0.00, 0.51, 11.0*px, true);
+  c += 0.090 * wave(uv, uvx, 0.33, 0.39, 0.11, 0.00, 0.50, 10.0*px, true);
+  c += 0.100 * wave(uv, uvx, 0.48, 0.50, 0.09, 0.00, 0.49,  7.0*px, true);
+  c += 0.085 * wave(uv, uvx, 0.22, 0.57, 0.08, 0.00, 0.48, 18.0*px, true);
 
-  // Background: dark base with subtle radial depth gradient
-  // Mimics the PS3's per-theme background texture gradient files
-  float depth = 1.0 - pow(length((uv - vec2(0.5, 0.42)) * vec2(0.75, 1.1)), 1.6) * 0.45;
-  depth = clamp(depth, 0.55, 1.0);
+  // Horizontal taper: fade in left 18%, full at 20–80%, fade out right 20%
+  c *= smoothstep(0.0, 0.18, uv.x) * smoothstep(1.0, 0.80, uv.x);
+
+  // ── Background ────────────────────────────────────────────────────────────
+  // PS3 DDS textures: lighter bloom toward bottom-left (gl_FragCoord y=0 = bottom)
+  float depth = 1.0 - pow(length((uv - vec2(0.15, 0.12)) * vec2(0.78, 0.95)), 1.6) * 0.38;
+  depth = clamp(depth, 0.62, 1.0);
   vec3 finalColor = uBgColor * depth;
 
-  // Soft ambient light cast by the wave back onto the dark background
-  finalColor += uBgColor * c * 0.12;
+  // Soft ambient bounce: wave casts a faint tinted glow back onto the background
+  finalColor += uWaveColor * c * 0.18;
 
-  // Fresnel-inspired silk edge brightening (PS3 Fresnel luminescence effect)
-  // pow(1-c, n)*c peaks near wave edges (c≈0.35), falls off at center and background
-  float fresnel = pow(1.0 - c, 2.5) * c * 5.0;
-  fresnel = clamp(fresnel, 0.0, 1.0);
+  // ── Pure white strands — additive over background ─────────────────────────
+  // Strand fill = white. The theme tint comes naturally from the coloured
+  // background showing through — no manual pre-tinting needed.
+  float waveLight  = c * uIntensity;
+  vec3 waveContrib = vec3(waveLight);
 
-  // Isolated wave contribution so halftone can target it without affecting the bg
-  vec3 waveContrib = uWaveColor * c * uIntensity
-                   + uWaveColor * fresnel * uIntensity * 0.35;
-
-  // Halftone dot grid — wave ribbons only, background stays smooth
+  // Halftone (optional, wave-only)
   if (uHalftone > 0.0) {
     vec2  cell   = floor(gl_FragCoord.xy / uHalftoneSize);
     vec2  center = (cell + 0.5) * uHalftoneSize;
     float d      = length(gl_FragCoord.xy - center);
-    float lum    = dot(waveContrib, vec3(0.299, 0.587, 0.114));
-    float radius = uHalftoneSize * 0.5 * lum;
+    float radius = uHalftoneSize * 0.5 * waveLight;
     float dotVal = smoothstep(radius + 0.8, radius - 0.8, d);
-    waveContrib  = mix(waveContrib, dotVal * uWaveColor * uIntensity, uHalftone);
+    waveContrib  = mix(waveContrib, vec3(dotVal * waveLight), uHalftone);
   }
 
   finalColor += waveContrib;
@@ -133,7 +150,7 @@ void main() {
     finalColor += vec3(g);
   }
 
-  // Triangular-PDF dither — eliminates 8-bit color banding in dark gradients
+  // Triangular-PDF dither — eliminates 8-bit banding in dark gradients
   float r1 = rand(gl_FragCoord.xy + vec2(uTime * 0.013, 0.0));
   float r2 = rand(gl_FragCoord.xy + vec2(0.0, uTime * 0.017));
   float dither = (r1 + r2 - 1.0) / 255.0;
