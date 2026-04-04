@@ -213,6 +213,7 @@ export default function ControlPanel({ params, onChange }: {
     const dx = e.clientX - dragRef.current.startX
     const dy = e.clientY - dragRef.current.startY
     if (Math.abs(dx) + Math.abs(dy) > 4) didDrag.current = true
+    if (!didDrag.current) return   // don't touch pillPos until threshold crossed
 
     const vw = window.innerWidth
     const vh = window.innerHeight
@@ -394,7 +395,7 @@ export default function ControlPanel({ params, onChange }: {
           {/* Wave controls */}
           <div className="px-3 py-2.5 space-y-3">
             <ControlRow label="Intensity" value={fmt(params.intensity)}>
-              <Slider min={0} max={2} step={0.01} value={[params.intensity]}
+              <Slider min={0} max={4} step={0.01} value={[params.intensity]}
                 onValueChange={([v]) => set("intensity", v)} />
             </ControlRow>
             <ControlRow label="Speed" value={fmt(params.speed)}>
