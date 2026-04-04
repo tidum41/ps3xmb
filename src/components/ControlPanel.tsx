@@ -435,7 +435,7 @@ export default function ControlPanel({ params, onChange, onStartup }: {
             className="flex w-full items-center justify-between px-3 py-2.5 text-[11px] text-white/35 hover:text-white/65 transition-colors cursor-pointer"
             onClick={() => setEffectsOpen(o => !o)}
           >
-            <span>Effects</span>
+            <span>effects</span>
             {effectsOpen
               ? <ChevronDown  className="h-3 w-3" />
               : <ChevronRight className="h-3 w-3" />
@@ -449,7 +449,7 @@ export default function ControlPanel({ params, onChange, onStartup }: {
                 onClick={onStartup}
                 className="w-full h-7 rounded-md bg-white/6 border border-white/10 text-[11px] text-white/50 hover:text-white/80 hover:bg-white/10 hover:border-white/20 active:scale-[0.98] transition-all"
               >
-                Startup sequence
+                startup sequence
               </button>
 
               <Separator className="bg-white/8" />
